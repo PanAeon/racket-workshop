@@ -77,6 +77,31 @@
     )
   )
 
+    (check-equal?
+     (lookup (list (cons 'a 1)
+                   (cons 'b 2))
+             'a)
+     1)
+
+    (check-equal?
+     (lookup (list (cons 'a 1)
+                   (cons 'b 2))
+             'b)
+     2)
+
+    (check-equal?
+     (lookup (list (cons 'a 0)
+                   (cons 'a 1)
+                   (cons 'b 2))
+             'a)
+     0)
+
+    (check-exn
+     exn:fail?
+     (λ ()
+       (lookup (list (cons 'a 1)
+                     (cons 'b 2))
+               'c)))
 
 (define (evaluate input)
   (eval-exp primitives input)
@@ -91,7 +116,7 @@
     (repl)
     )
   )
-
+ #|
     (check-equal?
      (evaluate '((λ () (+ 2 3))))
      5)
@@ -108,17 +133,17 @@
           (+ a b))))
      5)
 
-    (check-equal?
+   (check-equal?
      (evaluate
       '((lambda ()
           (define a 2)
           (define b (lambda (c) (define a 5) (+ a c)))
           (b a))))
-     7)
+     7) |#
 
 
 
-    #|(check-equal?
+    (check-equal?
      (extend-environment (list (cons 'd 2) (cons 'e 1))
                          (list 'a 'b 'c)
                          (list 5 4 3))
@@ -138,4 +163,4 @@
          (define a 2)
          (define a 3)
          (+ a a)))
-     6)|#
+     6)
