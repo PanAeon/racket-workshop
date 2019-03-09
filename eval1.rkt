@@ -2,6 +2,9 @@
 (require racket/trace)
 (require rackunit)
 
+#|
+   useful -- display
+|#
 (define primitives
   (list (cons '+ +)
         (cons '* *)
@@ -27,7 +30,7 @@
     [(list exp)  (eval-exp env exp)]
  
     [(list (list 'define name exp) rest ...)  (begin
-       (define (env1) (extend-environment env name (list (eval-exp env exp))))
+       (define (env1) (extend-environment env (list name) (list (eval-exp env exp))))
        (eval-sequence (env1) rest)
      )]
  
@@ -38,7 +41,7 @@
 (define (make-function env parameters body)
   (λ arguments; eval arguments, and return lambda, wait, hmm, could have reused prev one
     (begin
-       (define (f paramName arg e) (extend-environment e paramName (list (eval-exp e arg))))
+       (define (f paramName arg e) (extend-environment e (list paramName) (list (eval-exp e arg))))
        (define (env1) (foldl f env parameters arguments))
        (eval-sequence (env1) body)
      )
@@ -48,22 +51,24 @@
   (match exp
     [(? number?) exp]
     ;
-    ; FIXME: where's apply??
     ;
     [(list 'begin terms ...) (eval-sequence env terms)]
-
     
+  
+
+
     [(list 'λ parameters body ...) (make-function env parameters body)]
-    
-    [(list s args ...) #:when (symbol? s) (apply (lookup env s) (map (λ (x) (eval-exp env x)) args))]
-
-    [_ #:when (symbol? exp)  (lookup env exp)]
-
-
-    ;[(list 'λ parameters body ...) (make-function env parameters body)]
 
 
     [(list 'lambda parameters body ...) (make-function env parameters body)]
+
+    [(list s args ...) #:when (symbol? s) (apply (lookup env s) (map (λ (x) (eval-exp env x)) args))] ; APPLY symbol case
+
+    [_ #:when (symbol? exp)  (lookup env exp)]
+
+    [(list expr) (apply (eval-exp env  expr) '[])] ; APPLY single case
+
+    [(cons s args) (apply (eval-exp env s) (map (λ (x) (eval-exp env x)) args))] ; APPLY multiple case
 
     #| [(cons '+  args) (apply + (map eval-exp args))]
 
@@ -116,33 +121,35 @@
     (repl)
     )
   )
- #|
+ 
+;   :.:.:.:.:.::.:.:.:.:.: TEST Lookup :.:.:.:.:.::.:.:.:.:.::.:.:.:.:.::.:.:.:.:.::.:.:.:.:.:
     (check-equal?
-     (evaluate '((λ () (+ 2 3))))
-     5)
+     (lookup (list (cons 'a 1)
+                   (cons 'b 2))
+             'a)
+     1)
 
     (check-equal?
-     (evaluate '((lambda (x y) (+ x y)) 3 4))
-     7)
+     (lookup (list (cons 'a 1)
+                   (cons 'b 2))
+             'b)
+     2)
 
     (check-equal?
-     (evaluate
-      '((lambda ()
-          (define a 2)
-          (define b 3)
-          (+ a b))))
-     5)
+     (lookup (list (cons 'a 0)
+                   (cons 'a 1)
+                   (cons 'b 2))
+             'a)
+     0)
 
-   (check-equal?
-     (evaluate
-      '((lambda ()
-          (define a 2)
-          (define b (lambda (c) (define a 5) (+ a c)))
-          (b a))))
-     7) |#
+    (check-exn
+     exn:fail?
+     (λ ()
+       (lookup (list (cons 'a 1)
+                     (cons 'b 2))
+               'c)))
 
-
-
+;   :.:.:.:.:.::.:.:.:.:.: TEST ENV :.:.:.:.:.::.:.:.:.:.::.:.:.:.:.::.:.:.:.:.::.:.:.:.:.:
     (check-equal?
      (extend-environment (list (cons 'd 2) (cons 'e 1))
                          (list 'a 'b 'c)
@@ -164,3 +171,29 @@
          (define a 3)
          (+ a a)))
      6)
+
+;   :.:.:.:.:.::.:.:.:.:.: TEST λ :.:.:.:.:.::.:.:.:.:.::.:.:.:.:.::.:.:.:.:.::.:.:.:.:.:
+
+     (check-equal?
+     (evaluate '((λ () (+ 2 3))))
+     5)
+
+    (check-equal?
+     (evaluate '((lambda (x y) (+ x y)) 3 4))
+     7)
+
+    (check-equal?
+     (evaluate
+      '((lambda ()
+          (define a 2)
+          (define b 3)
+          (+ a b))))
+     5)
+
+    (check-equal?
+     (evaluate
+      '((lambda ()
+          (define a 2)
+          (define b (lambda (c) (define a 5) (+ a c)))
+          (b a))))
+     7)
