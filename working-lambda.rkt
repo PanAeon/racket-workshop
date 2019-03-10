@@ -5,24 +5,13 @@
 #|
    useful -- display
 |#
-
-(define (primitive function)
-  (λ (continue . args)
-    (continue (apply function args))))
-
-(define (my-plus continue . args)
-  (continue (apply + args)))
-;(trace my-plus)
-
 (define primitives
-  (list (cons '+ my-plus)
-        (cons '* (primitive *))
-        (cons '- (primitive -))
-        (cons '/ (primitive /))
+  (list (cons '+ +)
+        (cons '* *)
+        (cons '- -)
+        (cons '/ /)
   )
   )
-
-
 
 (define (lookup env s)
   (match env
@@ -36,86 +25,91 @@
   (append (map cons names values) env )) ; FIXME: doesn't delete duplicate value
 
 
-(define (eval-sequence env continue terms)
+(define (eval-sequence env terms)
   (match terms
-    [(list exp)  (eval-exp env continue exp)]
+    [(list exp)  (eval-exp env exp)]
  
-    [(list (list 'define name exp) rest ...) (eval-exp env (λ (e1)
-        (begin
-          (define (env1) (extend-environment env (list name) (list e1)))
-          (eval-sequence (env1) continue rest)
-        )
-      ) exp)
-       
-     ]
+    [(list (list 'define name exp) rest ...)  (begin
+       (define (env1) (extend-environment env (list name) (list (eval-exp env exp))))
+       (eval-sequence (env1) rest)
+     )]
  
-    [(list trm rest ...) (eval-exp env (λ (ignored) (eval-sequence env rest)) trm) ])
-)
+    [(list trm rest ...) (begin (eval-exp env trm) (eval-sequence env rest))]))
 
 ;(trace eval-sequence)
 
-; FIXME: this one is wrong!!!!
 (define (make-function env parameters body)
-  (λ (continue . arguments); eval arguments, and return lambda
+  (λ arguments; eval arguments, and return lambda, wait, hmm, could have reused prev one
     (begin
-       (define (funScope) (extend-environment env parameters arguments)) 
-       (eval-sequence (funScope) continue body)
+       (define (f paramName arg e) (extend-environment e (list paramName) (list (eval-exp e arg))))
+       (define (env1) (foldl f env parameters arguments))
+       (eval-sequence (env1) body)
      )
-    )
-)
+    ))
 
-
-
-
-(define (eval-application env continue fun args) ; victory, this will push args to the end of the list and evaluate the list at the end
-  (eval-exp
-     env
-     (λ (evaluated-function)
-       (let ([evaluated_args
-              (cdr ((foldr (λ(a r) (eval-exp env (λ (e1) (λ (x) (cons x (r e1))  ) ) a)) (λ (x) (list x)) args) '[]))
-             ])
-         (apply evaluated-function (cons continue evaluated_args))
-       )
-     )
-     fun
-  )
-)
-
-(define (fold-test fun args)
-  (define (arg)
-    (λ (x) (λ(c) (curry c x))
-    )
-  )
-  (define (args1)
-    (reverse (map (arg) args))
-  )
-  
-  (((foldr compose identity (args1)) fun))     
-  )
-;(trace eval-application)
-
-
-(define (eval-exp env continue  exp)
+(define (eval-exp env exp)
   (match exp
-    [(? number?) (continue exp)]
-
-    [(list 'begin terms ...) (eval-sequence env continue terms)]
-
-    [(list 'λ parameters body ...)  (continue (make-function env parameters body))]
-
-    [(list 'lambda parameters body ...)  (continue (make-function env parameters body))]
-
-    [(? symbol?)   (continue (lookup env exp))]
-
-    [(list fun args ...) (eval-application env continue fun args)]
+    [(? number?) exp]
+    ;
+    ;
+    [(list 'begin terms ...) (eval-sequence env terms)]
     
+  
+
+
+    [(list 'λ parameters body ...) (make-function env parameters body)]
+
+
+    [(list 'lambda parameters body ...) (make-function env parameters body)]
+
+    [(list s args ...) #:when (symbol? s) (apply (lookup env s) (map (λ (x) (eval-exp env x)) args))] ; APPLY symbol case
+
+    [_ #:when (symbol? exp)  (lookup env exp)]
+
+    [(list expr) (apply (eval-exp env  expr) '[])] ; APPLY single case
+
+    [(cons s args) (apply (eval-exp env s) (map (λ (x) (eval-exp env x)) args))] ; APPLY multiple case
+
+    #| [(cons '+  args) (apply + (map eval-exp args))]
+
+    [(list '* args ...) (apply * (map eval-exp args))]
+
+    [(list '- args ...) (apply - (map eval-exp args))]
+
+    [(list '/ args ...) (apply / (map eval-exp args))]
+   |#
     [_ (error 'wat (~a exp))]
     )
   )
-;(trace eval-exp)
-  
+
+    (check-equal?
+     (lookup (list (cons 'a 1)
+                   (cons 'b 2))
+             'a)
+     1)
+
+    (check-equal?
+     (lookup (list (cons 'a 1)
+                   (cons 'b 2))
+             'b)
+     2)
+
+    (check-equal?
+     (lookup (list (cons 'a 0)
+                   (cons 'a 1)
+                   (cons 'b 2))
+             'a)
+     0)
+
+    (check-exn
+     exn:fail?
+     (λ ()
+       (lookup (list (cons 'a 1)
+                     (cons 'b 2))
+               'c)))
+
 (define (evaluate input)
-  (eval-exp primitives identity input)
+  (eval-exp primitives input)
   )
 
 (define (repl)
@@ -202,4 +196,4 @@
           (define a 2)
           (define b (lambda (c) (define a 5) (+ a c)))
           (b a))))
-     7) 
+     7)
