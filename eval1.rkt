@@ -15,10 +15,15 @@
 ;(trace my-plus)
 
 (define primitives
-  (list (cons '+ my-plus)
+  (list (cons '+ (primitive +))
         (cons '* (primitive *))
         (cons '- (primitive -))
         (cons '/ (primitive /))
+        (cons '= (primitive =))
+        (cons '> (primitive >))
+        (cons '>= (primitive >=))
+        (cons '< (primitive <))
+        (cons '<= (primitive <=))
   )
   )
 
@@ -94,16 +99,31 @@
   )
 ;(trace eval-application)
 
+(define (eval-if env continue exp then else)
+  (eval-exp env (λ (e) (if e (eval-exp env continue then) (eval-exp env continue else)))
+            exp)
+)
+
+#|
+TODO: and, or (REWRITE)
+[(list 'and a b)
+ (define rewritten-exp (list 'if your code here))
+ your code also here]
+|#
 
 (define (eval-exp env continue  exp)
   (match exp
     [(? number?) (continue exp)]
+
+    [(? boolean?) (continue exp)]
 
     [(list 'begin terms ...) (eval-sequence env continue terms)]
 
     [(list 'λ parameters body ...)  (continue (make-function env parameters body))]
 
     [(list 'lambda parameters body ...)  (continue (make-function env parameters body))]
+
+    [(list 'if exp then else) (eval-if env continue exp then else)]
 
     [(? symbol?)   (continue (lookup env exp))]
 
@@ -202,4 +222,25 @@
           (define a 2)
           (define b (lambda (c) (define a 5) (+ a c)))
           (b a))))
-     7) 
+     7)
+
+;   :.:.:.:.:.::.:.:.:.:.: TEST Conditions :.:.:.:.:.::.:.:.:.:.::.:.:.:.:.::.:.:.:.:.::.:.:.:.:.:
+    (check-equal?
+     (evaluate '(if #f (+ 1 2) (+ 2 3)))
+     5)
+
+    (check-equal?
+     (evaluate '(if (> 8 4) (+ 1 2) 0))
+     3)
+
+    (check-equal?
+     (evaluate '((λ (a b)
+                   (if (> a (+ b b)) (- a b) (+ a b)))
+                 9 1))
+     8)
+
+    (check-equal?
+     (evaluate '((λ (a b)
+                   (if (> a (+ b b)) (- a b) (+ a b)))
+                 9 5))
+     14)
