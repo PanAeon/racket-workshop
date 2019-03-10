@@ -7,16 +7,15 @@
 |#
 
 (define (primitive function)
-  (λ (continue fail  . args)
-    (continue fail (apply function args))))
+  (λ (continue . args)
+    (continue (apply function args))))
 
-(define (my-plus continue fail  . args)
-  (continue fail (apply + args)))
-
-(trace my-plus)
+(define (my-plus continue . args)
+  (continue (apply + args)))
+;(trace my-plus)
 
 (define primitives
-  (list (cons '+  (primitive +))
+  (list (cons '+ (primitive +))
         (cons '* (primitive *))
         (cons '- (primitive -))
         (cons '/ (primitive /))
@@ -25,7 +24,6 @@
         (cons '>= (primitive >=))
         (cons '< (primitive <))
         (cons '<= (primitive <=))
-        (cons 'list (primitive list))
   )
   )
 
@@ -43,30 +41,30 @@
   (append (map cons names values) env )) ; FIXME: doesn't delete duplicate value
 
 
-(define (eval-sequence env continue fail terms)
+(define (eval-sequence env continue terms)
   (match terms
-    [(list exp)  (eval-exp env continue fail exp)]
+    [(list exp)  (eval-exp env continue exp)]
  
     [(list (list 'define name exp) rest ...) (eval-exp env (λ (e1)
         (begin
           (define (env1) (extend-environment env (list name) (list e1)))
-          (eval-sequence (env1) continue fail rest)
+          (eval-sequence (env1) continue rest)
         )
-      ) fail exp)
+      ) exp)
        
      ]
  
-    [(list trm rest ...) (eval-exp env (λ (ignored) (eval-sequence env rest)) fail trm) ])
+    [(list trm rest ...) (eval-exp env (λ (ignored) (eval-sequence env rest)) trm) ])
 )
 
 ;(trace eval-sequence)
 
 
 (define (make-function env parameters body)
-  (λ (continue  fail . arguments)
+  (λ (continue . arguments)
     (begin
        (define (funScope) (extend-environment env parameters arguments)) 
-       (eval-sequence (funScope) continue fail body)
+       (eval-sequence (funScope) continue body)
      )
     )
 )
@@ -74,48 +72,37 @@
 
 
 
-(define (eval-application env continue fail fun args) ; victory, this will push args to the end of the list and evaluate the list at the end
+(define (eval-application env continue fun args) ; victory, this will push args to the end of the list and evaluate the list at the end
   (eval-exp
      env
-     (λ (fail2 evaluated-function)
+     (λ (evaluated-function)
        (let ([evaluated_args
-              (cdr ((foldr (λ(a r) (eval-exp env (λ (fail3 e1) (λ (x) (cons x (r e1))  ) ) fail2 a)) (λ (x) (list x)) args) '[]))
+              (cdr ((foldr (λ(a r) (eval-exp env (λ (e1) (λ (x) (cons x (r e1))  ) ) a)) (λ (x) (list x)) args) '[]))
              ])
-         (apply evaluated-function (list* continue fail2 evaluated_args))
+         (apply evaluated-function (cons continue evaluated_args))
        )
      )
-     fail
      fun
   )
 )
 
-
+(define (fold-test fun args)
+  (define (arg)
+    (λ (x) (λ(c) (curry c x))
+    )
+  )
+  (define (args1)
+    (reverse (map (arg) args))
+  )
+  
+  (((foldr compose identity (args1)) fun))     
+  )
 ;(trace eval-application)
 
-(define (eval-if env continue fail exp then else)
-  (eval-exp env  (λ (fail2 e) (if e (eval-exp env continue fail2 then) (eval-exp env continue fail2 else))) fail
+(define (eval-if env continue exp then else)
+  (eval-exp env (λ (e) (if e (eval-exp env continue then) (eval-exp env continue else)))
             exp)
 )
-
-(define (eval-require env continue fail exp)
-  (let ([e (eval-exp env continue fail exp)])
-    (if e (continue e) (fail))
-  )
-)
-
-(define (eval-amb env continue fail exps)
-  (match exps
-    ['() (fail)]
-    [(list e rest ...) (eval-exp env continue (λ () (eval-amb env continue fail rest)) e)]
-  )
-)
-
-(define (evaluate* input)
-  (eval-exp primitives
-            (λ (fail res) (cons res (fail)))
-            (λ () '())
-            input))
-
 
 #|
 TODO: and, or (REWRITE)
@@ -124,29 +111,23 @@ TODO: and, or (REWRITE)
  your code also here]
 |#
 
-(define (eval-exp env continue fail exp)
+(define (eval-exp env continue  exp)
   (match exp
-    [(? number?) (continue fail exp)]
+    [(? number?) (continue exp)]
 
-    [(? boolean?) (continue fail exp)]
+    [(? boolean?) (continue exp)]
 
-    [(list 'begin terms ...) (eval-sequence env continue fail terms)]
+    [(list 'begin terms ...) (eval-sequence env continue terms)]
 
-    [(list 'λ parameters body ...)  (continue fail (make-function env parameters body))]
+    [(list 'λ parameters body ...)  (continue (make-function env parameters body))]
 
-    [(list 'lambda parameters body ...)  (continue fail (make-function env parameters body))]
+    [(list 'lambda parameters body ...)  (continue (make-function env parameters body))]
 
-    [(list 'if exp then else) (eval-if env continue fail exp then else)]
+    [(list 'if exp then else) (eval-if env continue exp then else)]
 
-    [(list 'require exp) (eval-require env continue fail exp)]
+    [(? symbol?)   (continue (lookup env exp))]
 
-    [(list 'amb exps ...) (eval-amb env continue fail exps)]
-
-    
-
-    [(? symbol?)   (continue fail (lookup env exp))] ; should use fail?
-
-    [(list fun args ...) (eval-application env continue fail fun args)]
+    [(list fun args ...) (eval-application env continue fun args)]
     
     [_ (error 'wat (~a exp))]
     )
@@ -154,11 +135,8 @@ TODO: and, or (REWRITE)
 ;(trace eval-exp)
   
 (define (evaluate input)
-  (eval-exp primitives
-            (λ (fail res) res)
-            (λ () (error 'ohno))
-            input))
-
+  (eval-exp primitives identity input)
+  )
 
 (define (repl)
   (printf "> ")
@@ -324,4 +302,4 @@ TODO: and, or (REWRITE)
          (define b (amb 2 4 3 6))
          (require (= (+ a b) 9))
          (list a b)))
-     '((3 6) (5 4) (7 2))) 
+     '((3 6) (5 4) (7 2)))
